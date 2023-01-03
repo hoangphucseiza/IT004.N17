@@ -1,0 +1,126 @@
+﻿CREATE DATABASE DETHITHU
+USE DETHITHU
+CREATE TABLE KHACHHANG
+(
+	MaKH char(5),
+	HoTen varchar(20),
+	DiaChi varchar(50),
+	NamSinh smalldatetime,
+	DienThoai varchar(15),
+	CONSTRAINT PK_KHACHHANG PRIMARY KEY (MaKH)
+)
+CREATE TABLE MONAN
+(
+	MaMA char(5),
+	TenMon varchar(25),
+	LoaiMon varchar(50),
+	CONSTRAINT PK_MONAN PRIMARY KEY (MaMA)
+)
+CREATE TABLE DONHANG
+(
+	MaDH char(5),
+	MaKH char(5),
+	NgayDat smalldatetime,
+	CONSTRAINT PK_DONHANG PRIMARY KEY (MaDH)
+)
+CREATE TABLE CHITIETDH
+(
+	MaDH char(5),
+	MaMA char(5),
+	SoLuong int,
+	Gia int
+	CONSTRAINT PK_CHITIETDH PRIMARY KEY (MaDH,MaMA)
+)
+SET DATEFORMAT DMY;
+-- Khóa ngoại
+ALTER TABLE DONHANG ADD CONSTRAINT FK_DONHANG FOREIGN KEY (MaKH) REFERENCES KHACHHANG(MaKH)
+ALTER TABLE CHITIETDH ADD CONSTRAINT FK_CHITIETDH1 FOREIGN KEY (MaDH) REFERENCES DONHANG(MaDH)
+ALTER TABLE CHITIETDH ADD CONSTRAINT FK_CHITIETDH2 FOREIGN KEY (MaMA) REFERENCES MONAN(MaMA)
+-- Câu 2:
+-- Loại món ăn chỉ có thể là “Món mặn”, “Món ngọt”, “Món chay” (0,5)
+ALTER TABLE MONAN ADD CONSTRAINT CHK_MONAN CHECK ( LoaiMon = 'Mon man' OR LoaiMon = 'Mon ngot' OR LoaiMon = 'Mon chay' )
+-- Khách hàng muốn đặt hàng thì phải đủ 15 tuổi trở lên
+CREATE TRIGGER Trg_Cau2
+ON DONHANG FOR INSERT, UPDATE
+AS
+BEGIN
+	DECLARE @MaKH char(5), @NamSinh smalldatetime
+	SELECT  @MaKH =MaKH FROM INSERTED
+	SELECT @NamSinh =NamSinh FROM KHACHHANG WHERE KHACHHANG.MAKH = @MaKH
+	IF ( YEAR(GETDATE()) - YEAR(@NamSinh) <15)
+	BEGIN
+		print'Khach hang chua du 15 tuoi tro len'
+		rollback transaction
+	END 
+END
+CREATE TRIGGER Trg_Cau2_1
+ON KHACHHANG FOR UPDATE
+AS
+BEGIN
+	DECLARE @MaDH char(5), @MaKH char(5) , @NamSinh smalldatetime
+	SELECT  @MaKH = MaKH, @NamSinh = NamSinh FROM INSERTED
+	IF EXISTS ( SELECT MADH FROM DONHANG WHERE DONHANG.MAKH = @MaKH )
+	BEGIN
+	IF ( YEAR(GETDATE()) - YEAR(@NamSinh) <15)
+	BEGIN
+		print'Khach hang chua du 15 tuoi tro len'
+		rollback transaction
+	END 
+	END
+END
+-- Câu 3:
+-- Liệt kê khách hàng (MaKH, HoTen, DiaChi) có năm sinh từ 2000 trở lên và có địa chỉ ở “TPHCM”
+SELECT MaKH, HoTen, DiaCHi
+FROM KHACHHANG
+WHERE DiaChi ='TPHCM' AND YEAR(NamSinh) >2000
+--Liệt kê khách hàng (MaKH, HoTen) không đặt món ăn có tên là “Cơm chiên dương châu
+SELECT MaKH, HoTen
+FROM KHACHHANG
+WHERE MaKH NOT IN
+(SELECT KHACHHANG.MaKH
+FROM KHACHHANG, MONAN, DONHANG, CHITIETDH
+WHERE KHACHHANG.MaKH =DONHANG.MaKH AND DONHANG.MADH = CHITIETDH.MADH AND CHITIETDH.MAMA = MONAN.MaMA
+AND MONAN.TenMon ='Com chien duong chau')
+-- Liệt kê khách hàng (MaKH, HoTen) đặt món ăn có tên là “Nui xào bò” và món ăn có tên là “Canh chua cá bóp”
+(SELECT KHACHHANG.MaKH, HoTen
+FROM KHACHHANG, MONAN, DONHANG, CHITIETDH
+WHERE KHACHHANG.MaKH =DONHANG.MaKH AND DONHANG.MADH = CHITIETDH.MADH AND CHITIETDH.MAMA = MONAN.MaMA
+AND MONAN.TenMon ='Nui xao bo' )
+INTERSECT 
+(SELECT KHACHHANG.MaKH, HoTen
+FROM KHACHHANG, MONAN, DONHANG, CHITIETDH
+WHERE KHACHHANG.MaKH =DONHANG.MaKH AND DONHANG.MADH = CHITIETDH.MADH AND CHITIETDH.MAMA = MONAN.MaMA
+AND MONAN.TenMon ='Canh chua ca bop'
+)
+-- Với mỗi khách hàng, cho biết số lượng món ăn mà khách hàng đó đặt hàng. Thông tin hiển thị bao gồm: Mã khách hàng, số lượng món ăn đặt
+SELECT KHACHHANG.MAKH , COUNT(MaMA) 'So Luong Mon An Dat'
+FROM KHACHHANG, DONHANG, CHITIETDH
+WHERE KHACHHANG.MaKH =DONHANG.MaKH AND DONHANG.MADH = CHITIETDH.MADH
+GROUP BY KHACHHANG.MAKH
+-- Tìm đơn hàng có mua ít nhất 4 món ăn khác nhau
+SELECT *
+FROM DONHANG
+WHERE DONHANG.MaDH IN ( SELECT DONHANG.MADH FROM DONHANG, CHITIETDH, MONAN WHERE DONHANG.MADH = CHITIETDH.MADH AND CHITIETDH.MAMA = MONAN.MAMA
+GROUP BY DONHANG.MADH HAVING COUNT(MONAN.MAMA) >=4 )
+--Liệt kê khách hàng đã mua tất cả các món ăn thuộc loại món là món chay vào ngày “26/02/2022” ( Xem lại)
+SELECT KHACHHANG.MAKH
+FROM  KHACHHANG
+	WHERE NOT EXISTS(SELECT *
+	FROM MONAN, DONHANG
+	WHERE LoaiMon = 'Mon chay' AND NgayDat = '26/12/2022'
+		AND NOT EXISTS(SELECT * 
+		FROM CHITIETDH
+		WHERE KHACHHANG.MAKH =DONHANG.MAKH 
+		AND DONHANG.MADH = CHITIETDH.MADH AND CHITIETDH.MAMA = MONAN.MAMA ))
+--Liệt kê món ăn (MaMA, TenMon) có số lần đặt hàng nhiều nhất
+SELECT TOP 1 MONAN.MaMA, TenMon
+FROM MONAN, CHITIETDH
+WHERE MONAN.MAMA = CHITIETDH.MAMA 
+GROUP BY MONAN.MAMA
+ORDER BY COUNT(MADH) DESC
+--Liệt kê món ăn (MaMA, TenMon) có số lần đặt hàng ít nhất
+SELECT TOP 1 MONAN.MaMA, TenMon
+FROM MONAN, CHITIETDH
+WHERE MONAN.MAMA = CHITIETDH.MAMA 
+GROUP BY MONAN.MAMA
+ORDER BY COUNT(MADH) ASC
